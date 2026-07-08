@@ -1,0 +1,56 @@
+version: "3"
+
+output: prefixed
+
+env:
+  CGO_ENABLED: 0
+  IMAGE_DEV: ko.local/t-schedule
+
+tasks:
+  build:
+    desc: Build binary
+    cmds:
+      - go build -ldflags="-s -w" -trimpath -o bin/t-schedule .
+
+  lint:
+    desc: Run go vet & tests
+    cmds:
+      - go mod tidy
+      - go fmt ./...
+      - go vet ./...
+      - go test ./...
+
+  update:
+    desc: Update dependencies
+    cmds:
+      - go get -u ./...
+
+  dev:
+    desc: Run the bot locally
+    cmds:
+      - go run . --debug
+
+  snapshot:
+    desc: Build a local release snapshot with goreleaser (no publish)
+    cmds:
+      - goreleaser --snapshot --clean --skip=validate
+
+  release:
+    desc: Cut a real release with goreleaser (run in CI, needs a git tag)
+    cmds:
+      - goreleaser release --clean --skip=validate
+
+  docker:
+    desc: Build a local test container image with ko
+    cmds:
+      - KO_DOCKER_REPO=$IMAGE_DEV ko build . --bare
+
+  compose:up:
+    desc: Start the published image via docker compose
+    cmds:
+      - docker compose up -d
+
+  compose:down:
+    desc: Stop the docker compose stack
+    cmds:
+      - docker compose down
