@@ -63,39 +63,109 @@ func TryAuth(userName, password string) (*AuthResult, error) {
 		return nil, err
 	}
 
-	accessToken := tokenResp.Data.Data.AccessToken
-	studentID := tokenResp.Data.Data.ID * -1
-
+	user := tokenResp.user()
+	accessToken := user.AccessToken
 	if accessToken == "" {
-		return nil, fmt.Errorf("eduapi: empty access token in tokenauth response")
+		return nil, fmt.Errorf("eduapi: tokenauth failed (state %d): %s", tokenResp.State, tokenResp.Msg)
 	}
 
-	infoReq, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%sapi/UserInfo/Student?studentID=%d", origin, studentID), nil)
+	// wrapper.ts derives the studentID by negating the id from tokenauth
+	// (the portal hands it back negative).
+	studentID := user.ID * -1
+
+	info, err := userInfo(accessToken, studentID)
 	if err != nil {
 		return nil, err
 	}
-	infoReq.Header.Set("Authorization", "Bearer "+accessToken)
-
-	infoResp, err := httpClient.Do(infoReq)
-	if err != nil {
-		return nil, err
+	if info.Data.StudentID != 0 {
+		studentID = info.Data.StudentID
 	}
-	defer closeBody(infoResp.Body)
-
-	var userInfo userInfoResponse
-	if err := json.NewDecoder(infoResp.Body).Decode(&userInfo); err != nil {
-		return nil, err
+	if studentID == 0 {
+		return nil, fmt.Errorf("eduapi: could not resolve student id (state %d): %s", info.State, info.Msg)
 	}
 
-	if userInfo.Data.EliteEducationID == 0 {
-		return nil, fmt.Errorf("eduapi: could not resolve education space")
+	spaceID := info.Data.EliteEducationID
+	if spaceID == 0 {
+		// eliteEducationID is null for plain DSTU accounts, so fall back to
+		// asking each education space whether it knows this student.
+		spaceID, err = detectEducationSpace(accessToken, studentID)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &AuthResult{
 		AccessToken: accessToken,
-		SpaceID:     userInfo.Data.EliteEducationID,
+		SpaceID:     spaceID,
 		StudentID:   studentID,
 	}, nil
+}
+
+// educationSpaces are the spaces the bot supports, mirroring the SchoolX (1)
+// and TUniversity (4) split in synchronizeCalendar.ts.
+var educationSpaces = []int64{1, 4}
+
+// detectEducationSpace finds the space whose student roster contains the
+// given student.
+func detectEducationSpace(accessToken string, studentID int64) (int64, error) {
+	for _, spaceID := range educationSpaces {
+		students, err := studentListForSpace(accessToken, spaceID)
+		if err != nil {
+			return 0, err
+		}
+		for _, s := range students {
+			if s.StudentID == studentID {
+				return spaceID, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("eduapi: student %d not found in any education space", studentID)
+}
+
+// studentListForSpace fetches the raw student roster of one education space.
+func studentListForSpace(accessToken string, spaceID int64) ([]apiStudent, error) {
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s?educationSpaceID=%d", studentURL, spaceID), nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Cookie", "authToken="+accessToken)
+	setCommonHeaders(req, "https://edu.donstu.ru/WebApp/#/RaspManager/Calendar")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer closeBody(resp.Body)
+
+	var out studentListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out.Data.AllStudent, nil
+}
+
+func userInfo(accessToken string, studentID int64) (userInfoResponse, error) {
+	var out userInfoResponse
+
+	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%sapi/UserInfo/Student?studentID=%d", origin, studentID), nil)
+	if err != nil {
+		return out, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Cookie", "authToken="+accessToken)
+	setCommonHeaders(req, "https://edu.donstu.ru/WebApp/#/login")
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return out, err
+	}
+	defer closeBody(resp.Body)
+
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 // GetReserveRasp fetches the reserve (iCal-derived) schedule for a student,
@@ -200,11 +270,12 @@ func (c *Client) Auth(ctx context.Context) error {
 	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
 		return err
 	}
-	if tokenResp.Data.AccessToken == "" {
-		return fmt.Errorf("eduapi: can't get token for user %s", c.userName)
+	accessToken := tokenResp.user().AccessToken
+	if accessToken == "" {
+		return fmt.Errorf("eduapi: can't get token for user %s (state %d): %s", c.userName, tokenResp.State, tokenResp.Msg)
 	}
 
-	c.accessToken = tokenResp.Data.AccessToken
+	c.accessToken = accessToken
 
 	if c.providerID != "" && c.store != nil {
 		if err := c.store.UpdateProviderAccessToken(ctx, c.providerID, c.accessToken); err != nil {
@@ -322,28 +393,17 @@ func (c *Client) GetStudentList(ctx context.Context) ([]store.Student, error) {
 		return nil, err
 	}
 
-	req, err := http.NewRequest(http.MethodGet, fmt.Sprintf("%s?educationSpaceID=%d", studentURL, c.spaceID), nil)
+	if c.spaceID <= 0 {
+		return nil, nil
+	}
+
+	raw, err := studentListForSpace(c.accessToken, c.spaceID)
 	if err != nil {
 		return nil, err
 	}
-	c.authHeaders(req)
 
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeBody(resp.Body)
-
-	var out studentListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, err
-	}
-
-	students := make([]store.Student, 0, len(out.Data.AllStudent))
-	for _, s := range out.Data.AllStudent {
-		if c.spaceID <= 0 {
-			continue
-		}
+	students := make([]store.Student, 0, len(raw))
+	for _, s := range raw {
 		students = append(students, store.Student{
 			ID:        s.StudentID,
 			Course:    s.Course,

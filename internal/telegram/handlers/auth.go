@@ -24,9 +24,8 @@ func (d *Deps) Auth(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 
 	fields := strings.Fields(commandPayload(msg.Text))
 	if len(fields) != 2 {
-		d.reply(ctx, b, msg.Chat.ID, session,
-			"Для авторизации, введите команду /auth с вашим логином и паролем от личного кабинета на edu.donstu.ru, в формате `/auth login password`, где `login` - ваш логин, а `password` - ваш пароль.\n\nПример:\n/auth example@gmail.com 123456",
-			models.InlineKeyboardMarkup{})
+		d.replyHTML(ctx, b, msg.Chat.ID, session,
+			"Для авторизации, введите команду /auth с вашим логином и паролем от личного кабинета на edu.donstu.ru, в формате <code>/auth login password</code>, где <code>login</code> - ваш логин, а <code>password</code> - ваш пароль.\n\nПример:\n/auth example@gmail.com 123456")
 		return
 	}
 	userName, password := fields[0], fields[1]
@@ -39,6 +38,7 @@ func (d *Deps) Auth(ctx context.Context, b *tgbot.Bot, update *models.Update) {
 
 	result, err := eduapi.TryAuth(userName, password)
 	if err != nil || result == nil {
+		logError(ctx, "auth.tryAuth", err)
 		d.handleAuthError(ctx, b, msg.Chat.ID, waitMsg.ID, session)
 		return
 	}

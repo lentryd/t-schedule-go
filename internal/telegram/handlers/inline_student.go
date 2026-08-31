@@ -11,6 +11,9 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// minCacheTime is the shortest inline-answer cache we can express.
+const minCacheTime = 1
+
 // inlineStudent answers an inline query while the bot is waiting for a
 // student pick, mirroring methods/inline.student.ts.
 func (d *Deps) inlineStudent(ctx context.Context, b *tgbot.Bot, iq *models.InlineQuery) {
@@ -19,6 +22,11 @@ func (d *Deps) inlineStudent(ctx context.Context, b *tgbot.Bot, iq *models.Inlin
 	if query == "" {
 		_, _ = b.AnswerInlineQuery(ctx, &tgbot.AnswerInlineQueryParams{
 			InlineQueryID: iq.ID,
+			// inline.student.ts answers with cache_time: 0; the smallest value
+			// we can send here (0 is dropped by `omitempty`, which would make
+			// Telegram fall back to caching results for 300s for everyone).
+			CacheTime:  minCacheTime,
+			IsPersonal: true,
 			Results: []models.InlineQueryResult{
 				&models.InlineQueryResultArticle{
 					ID:                  "tips",
@@ -61,5 +69,10 @@ func (d *Deps) inlineStudent(ctx context.Context, b *tgbot.Bot, iq *models.Inlin
 		}
 	}
 
-	_, _ = b.AnswerInlineQuery(ctx, &tgbot.AnswerInlineQueryParams{InlineQueryID: iq.ID, Results: matches})
+	_, _ = b.AnswerInlineQuery(ctx, &tgbot.AnswerInlineQueryParams{
+		InlineQueryID: iq.ID,
+		CacheTime:     minCacheTime,
+		IsPersonal:    true,
+		Results:       matches,
+	})
 }

@@ -55,6 +55,14 @@ func (u *StudentListUpdater) Run(ctx context.Context, ignoreTime bool) error {
 	students = append(students, fetchFromAny(ctx, u.store, schoolX)...)
 	students = append(students, fetchFromAny(ctx, u.store, tUniversity)...)
 
+	// Never overwrite a good list with an empty one: if every provider fails
+	// (bad credentials, edu.donstu.ru down), keep what we already have,
+	// otherwise inline student search silently stops finding anybody.
+	if len(students) == 0 {
+		slog.Warn("studentlist: no students fetched, keeping previous list")
+		return nil
+	}
+
 	if err := u.store.SetStudentList(ctx, students, time.Now()); err != nil {
 		return err
 	}

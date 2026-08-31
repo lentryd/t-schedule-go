@@ -37,7 +37,7 @@ func (d *Deps) Student(ctx context.Context, b *tgbot.Bot, update *models.Update)
 	student, ok := d.Store.FindStudent(studentID)
 	if !ok {
 		d.reply(ctx, b, msg.Chat.ID, session,
-			"Студент с указанным идентификатором не найден в базе данных. Пожалуйста, попробуйте выполнить аутентификацию с помощью команды /auth", models.InlineKeyboardMarkup{})
+			"Студент с указанным идентификатором не найден в базе данных. Пожалуйста, попробуйте выполнить аутентификацию с помощью команды /auth")
 		return
 	}
 

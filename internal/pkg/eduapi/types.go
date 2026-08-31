@@ -1,33 +1,70 @@
 package eduapi
 
+import "encoding/json"
+
 // Only the fields actually consumed by the bot are modeled; the upstream API
 // returns much larger payloads (mirrors the trimmed usage in wrapper.ts).
 
+// tokenAuthResponse mirrors POST /api/tokenauth. On success the payload is
+// double-nested - {data:{data:{accessToken, id}, accessToken}} - as described
+// by wrapper.ts's TokenAuthResponse; on failure `data` collapses to the
+// string "uNull", hence the json.RawMessage and the lenient decoding below.
 type tokenAuthResponse struct {
-	State int `json:"state"`
-	Data  struct {
-		AccessToken string `json:"accessToken"`
-		Data        struct {
-			AccessToken string `json:"accessToken"`
-			ID          int64  `json:"id"`
-		} `json:"data"`
-	} `json:"data"`
+	State       int             `json:"state"`
+	Msg         string          `json:"msg"`
+	AccessToken string          `json:"accessToken"`
+	Data        json.RawMessage `json:"data"`
+}
+
+type tokenAuthData struct {
+	AccessToken string         `json:"accessToken"`
+	ID          int64          `json:"id"`
+	Data        *tokenAuthData `json:"data"`
+}
+
+// user returns the authenticated user's token and id, taking them from the
+// nested payload and falling back to the outer levels.
+func (r tokenAuthResponse) user() tokenAuthData {
+	var outer tokenAuthData
+	if len(r.Data) > 0 {
+		_ = json.Unmarshal(r.Data, &outer)
+	}
+
+	user := outer
+	if outer.Data != nil {
+		user = *outer.Data
+	}
+	if user.AccessToken == "" {
+		user.AccessToken = outer.AccessToken
+	}
+	if user.AccessToken == "" {
+		user.AccessToken = r.AccessToken
+	}
+	if user.ID == 0 {
+		user.ID = outer.ID
+	}
+	return user
 }
 
 type userInfoResponse struct {
-	Data struct {
+	State int    `json:"state"`
+	Msg   string `json:"msg"`
+	Data  struct {
+		StudentID        int64 `json:"studentID"`
 		EliteEducationID int64 `json:"eliteEducationID"`
 	} `json:"data"`
 }
 
+type apiStudent struct {
+	StudentID int64  `json:"studentID"`
+	FullName  string `json:"fullName"`
+	Fio       string `json:"fio"`
+	Course    int64  `json:"course"`
+}
+
 type studentListResponse struct {
 	Data struct {
-		AllStudent []struct {
-			StudentID int64  `json:"studentID"`
-			FullName  string `json:"fullName"`
-			Fio       string `json:"fio"`
-			Course    int64  `json:"course"`
-		} `json:"allStudent"`
+		AllStudent []apiStudent `json:"allStudent"`
 	} `json:"data"`
 }
 
