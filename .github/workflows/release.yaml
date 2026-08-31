@@ -5,6 +5,10 @@ on:
     tags:
       - "v*"
 
+env:
+  # Keep in sync with the version used locally (task lint) and by the Test workflow.
+  GOLANGCI_LINT_VERSION: v2.13.2
+
 permissions:
   contents: write
   packages: write
@@ -42,6 +46,12 @@ jobs:
 
       - name: Install Ko
         uses: ko-build/setup-ko@v0.9
+
+      - name: Install GolangCI-Lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh \
+            | sh -s -- -b "$(go env GOPATH)/bin" "$GOLANGCI_LINT_VERSION"
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Lint
         run: task lint
