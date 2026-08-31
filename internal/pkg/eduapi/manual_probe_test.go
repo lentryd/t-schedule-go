@@ -63,8 +63,8 @@ func TestManualAllMethods(t *testing.T) {
 		t.Errorf("GetRaspList: %v", err)
 	} else {
 		t.Logf("GetRaspList: %d events", len(rasp))
-		if len(rasp) > 0 {
-			t.Logf("  first=%+v", rasp[0])
+		for _, e := range rasp {
+			t.Logf("  summary=%q", e.Summary)
 		}
 	}
 

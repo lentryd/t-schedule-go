@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"t-schedule/internal/pkg/colorize"
 
@@ -59,9 +61,15 @@ func formatSchedule(items []raspListItem, lessonsTypes []lessonType) []ScheduleF
 	out := make([]ScheduleFormat, 0, len(items))
 
 	for _, item := range items {
-		endStr := item.Start
-		if item.End != nil && *item.End != "" {
-			endStr = *item.End
+		// formatSchedule() drops entries without an end time before mapping
+		// them (`.filter((val) => val.end !== null)`).
+		if item.End == nil {
+			continue
+		}
+
+		endStr := *item.End
+		if endStr == "" {
+			endStr = item.Start
 		}
 
 		start, err1 := parseAPITime(item.Start)
@@ -131,7 +139,14 @@ func findAbbreviation(lessonType string, lessonsTypes []lessonType) string {
 	if typeAbbr == "" {
 		return ""
 	}
-	return strings.ToUpper(typeAbbr[:1]) + typeAbbr[1:]
+	// Uppercase the first rune, not the first byte: "Лек." starts with a
+	// two-byte character, and slicing it would produce invalid UTF-8 that
+	// strings.ToUpper turns into U+FFFD.
+	first, size := utf8.DecodeRuneInString(typeAbbr)
+	if first == utf8.RuneError {
+		return typeAbbr
+	}
+	return string(unicode.ToUpper(first)) + typeAbbr[size:]
 }
 
 func buildDescription(info raspInfo) string {
