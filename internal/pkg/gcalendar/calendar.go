@@ -31,18 +31,24 @@ func New(ctx context.Context, credentialsPath string) (*Client, error) {
 	return &Client{svc: svc}, nil
 }
 
-const defaultDescription = "Generated and updating by @t_schedule_bot"
+// Defaults for a newly created calendar, mirroring DEFAULT_CALENDAR_OPTIONS
+// in utils/calendar.ts.
+const (
+	defaultSummary     = "New Schedule"
+	defaultTimeZone    = "Europe/Moscow"
+	defaultDescription = "Сгенерировано и обновляется @t_schedule_bot"
+)
 
 // CreateCalendar creates a calendar with the given summary and opens default
 // (reader) access to it, mirroring createCalendar().
 func (c *Client) CreateCalendar(ctx context.Context, summary string) (string, error) {
 	cal := &calendar.Calendar{
 		Summary:     summary,
-		TimeZone:    "Europe/Moscow",
-		Description: "Сгенерировано и обновляется @t_schedule_bot",
+		TimeZone:    defaultTimeZone,
+		Description: defaultDescription,
 	}
 	if cal.Summary == "" {
-		cal.Summary = "New Schedule"
+		cal.Summary = defaultSummary
 	}
 
 	created, err := c.svc.Calendars.Insert(cal).Context(ctx).Do()

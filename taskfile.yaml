@@ -13,11 +13,12 @@ tasks:
       - go build -ldflags="-s -w" -trimpath -o bin/t-schedule .
 
   lint:
-    desc: Run go vet & tests
+    desc: Run go vet, golangci-lint & tests
     cmds:
       - go mod tidy
       - go fmt ./...
       - go vet ./...
+      - golangci-lint run --timeout=10m
       - go test ./...
 
   update:
